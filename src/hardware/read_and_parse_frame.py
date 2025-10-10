@@ -1,9 +1,9 @@
 import struct
 import numpy as np
 
-# Local imports from the files we've already created
-import hw_comms_utils
-import parsing_utils
+# MODIFICATION: Changed local imports to be relative
+from . import hw_comms_utils
+from . import parsing_utils
 
 # --- TLV Type Constants ---
 # As defined in read_and_parse_frame.m

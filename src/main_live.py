@@ -4,7 +4,7 @@ from datetime import datetime
 import numpy as np
 
 # --- Import all our project modules ---
-# Hardware layer
+# MODIFICATION: Changed imports to be relative
 from .hardware import hw_comms_utils, parsing_utils
 from .hardware.read_and_parse_frame import read_and_parse_frame
 
@@ -13,7 +13,8 @@ from .data_adapter import adapt_frame_data_to_fhist
 
 # Tracking layer
 from .tracking.tracker import RadarTracker
-from .tracking.main import define_parameters # Use main.py from tracker to get params
+# This import might also need to be relative, let's try this first.
+from .tracking.parameters import define_parameters # Use parameters.py from tracker to get params
 from .tracking.update_and_save_history import update_and_save_history
 
 # --- Configuration ---

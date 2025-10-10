@@ -1,17 +1,16 @@
-# src/perform_track_assignment_master.py
-
 import numpy as np
 import logging
 from copy import deepcopy
 
-from src.filters.imm_filter import imm_predict, imm_correct
-from src.track_management.jpda_assignment import jpda_assignment
-from src.track_management.update_tentative import update_tentative_tracks
-from src.track_management.reassign import reassign_lost_tracks
-from src.track_management.assign import assign_new_tracks
-from src.track_management.delete import delete_unassigned_tracks
-from src.utils.categorize_ttc import categorize_ttc
-from src.utils.calculate_ellipse_radii import calculate_ellipse_radii
+# MODIFICATION: Changed all imports to use a single dot (.) for correct relative path
+from .filters.imm_filter import imm_predict, imm_correct
+from .track_management.jpda_assignment import jpda_assignment
+from .track_management.update_tentative import update_tentative_tracks
+from .track_management.reassign import reassign_lost_tracks
+from .track_management.assign import assign_new_tracks
+from .track_management.delete import delete_unassigned_tracks
+from .utils.categorize_ttc import categorize_ttc
+from .utils.calculate_ellipse_radii import calculate_ellipse_radii
 
 
 def perform_track_assignment_master(
