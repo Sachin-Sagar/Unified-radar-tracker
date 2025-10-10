@@ -1,4 +1,4 @@
-# src/update_and_save_history.py
+# src/tracking/update_and_save_history.py
 
 import json
 import numpy as np
@@ -35,7 +35,6 @@ def _convert_to_matlab_struct(py_list, struct_name=''):
         dict_list = py_list
 
     # --- NEW: Define the canonical field order ---
-    # This enforces the same column order as MATLAB's struct
     fhist_order = [
         'timestamp', 'pointCloud', 'posLocal', 'grid_map', 'point_to_grid_idx',
         'motionState', 'egoVx', 'egoVy', 'egoInlierRatio', 'correctedEgoSpeed_mps',
@@ -50,24 +49,20 @@ def _convert_to_matlab_struct(py_list, struct_name=''):
         'ttcCategory', 'detectionHistory', 'lastSeenFrame', 'stationaryCount'
     ]
     
-    # Get all unique keys found in the data
     all_keys_found = set().union(*(d.keys() for d in dict_list))
 
-    # Choose the appropriate ordered list
     if struct_name == 'fHist':
         ordered_keys = fhist_order
     elif struct_name == 'allTracks':
         ordered_keys = alltracks_order
     else:
-        ordered_keys = sorted(list(all_keys_found)) # Default to alphabetical for nested structs
+        ordered_keys = sorted(list(all_keys_found))
 
-    # Start with the canonical order, then add any extra fields found
     final_ordered_keys = [key for key in ordered_keys if key in all_keys_found]
     for key in sorted(list(all_keys_found)):
         if key not in final_ordered_keys:
             final_ordered_keys.append(key)
 
-    # Use the final ordered list to define the struct dtype
     dtype = [(key, 'O') for key in final_ordered_keys]
     
     mat_struct = np.zeros((len(dict_list), 1), dtype=dtype)
@@ -79,12 +74,18 @@ def _convert_to_matlab_struct(py_list, struct_name=''):
             if value is None:
                 value = np.nan
             
+            # --- THIS IS THE FIX ---
+            # If the value is a custom object (like the barrier struct),
+            # convert it to a dictionary before processing.
+            if hasattr(value, '__dict__'):
+                value = vars(value)
+            # --- END OF FIX ---
+
             is_list_of_dicts = False
             if isinstance(value, list) and len(value) > 0 and isinstance(value[0], dict):
                 is_list_of_dicts = True
 
             if is_list_of_dicts:
-                # Pass the key as the struct_name for nested structs
                 mat_struct[i, 0][key] = _convert_to_matlab_struct(value, struct_name=key)
             else:
                 mat_struct[i, 0][key] = value
@@ -94,7 +95,6 @@ def _convert_to_matlab_struct(py_list, struct_name=''):
 def update_and_save_history(all_tracks, fhist, json_filename="track_history.json", params=None):
     """
     Saves the final data to a JSON file and a MATLAB-compatible .mat file.
-    The .mat file will contain 'allTracks' and 'fHist' variables with ordered fields.
     """
     if params is None:
         params = {}
@@ -111,9 +111,8 @@ def update_and_save_history(all_tracks, fhist, json_filename="track_history.json
     # --- 2. Save to .mat ---
     mat_filename = json_filename.replace('.json', '_python.mat')
     try:
-        logging.info("Converting Python data to MATLAB-compatible structs with ordered fields...")
+        logging.info("Converting Python data to MATLAB-compatible structs...")
         
-        # Pass the variable name to the converter to select the correct field order
         allTracks_mat = _convert_to_matlab_struct(all_tracks, struct_name='allTracks')
         fHist_mat = _convert_to_matlab_struct(fhist, struct_name='fHist')
 

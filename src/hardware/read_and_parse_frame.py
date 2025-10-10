@@ -131,7 +131,7 @@ def read_and_parse_frame(h_data_port, params):
         tlv_type = tlv_header['type']
 
         # --- NEW: Added debug message for TLV header ---
-        print(f"[DEBUG] Found TLV #{i+1} of {frame_header['numTLVs']}: Type={tlv_type}, Length={value_length} bytes, at offset={offset}")
+        #print(f"[DEBUG] Found TLV #{i+1} of {frame_header['numTLVs']}: Type={tlv_type}, Length={value_length} bytes, at offset={offset}")
 
         # --- CRITICAL FIX ---
         # The total length of the TLV is the value_length + the header length.
@@ -170,7 +170,7 @@ def parse_point_cloud_tlv(frame_data, value_bytes, params):
     frame_data.num_points = num_input_points
 
     # --- NEW: Added debug message for point cloud data ---
-    print(f"[DEBUG] Point Cloud TLV: Found {num_input_points} detected points.")
+    #print(f"[DEBUG] Point Cloud TLV: Found {num_input_points} detected points.")
 
     if num_input_points > 0:
         points_offset = point_unit_len
@@ -219,7 +219,7 @@ def parse_stats_tlv(frame_data, value_bytes):
         value_bytes[offset : offset + temp_len], STATS_TEMP_STRUCT
     )
     # --- NEW: Added debug message for stats data ---
-    print(f"[DEBUG] Stats TLV: Parsed timing, power, and temperature info.")
+    #print(f"[DEBUG] Stats TLV: Parsed timing, power, and temperature info.")
 
 
 def parse_target_list_tlv(frame_data, value_bytes):
@@ -229,7 +229,7 @@ def parse_target_list_tlv(frame_data, value_bytes):
     frame_data.num_targets = num_targets
     
     # --- NEW: Added debug message for target list data ---
-    print(f"[DEBUG] Target List TLV: Found {num_targets} targets.")
+    #print(f"[DEBUG] Target List TLV: Found {num_targets} targets.")
 
     if num_targets > 0:
         targets = {
