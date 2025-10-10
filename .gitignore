@@ -36,6 +36,7 @@ env.bak/
 venv.bak/
 
 # Output files
+data/
 output/
 *.json
 *.mat

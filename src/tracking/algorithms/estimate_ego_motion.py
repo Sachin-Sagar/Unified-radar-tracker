@@ -1,6 +1,7 @@
 # src/algorithms/estimate_ego_motion.py
 
 import numpy as np
+import numbers # <-- Import the numbers module
 
 # Import the modules we have already ported
 from .estimate_ego_motion_ransac import estimate_ego_motion_ransac
@@ -17,17 +18,24 @@ def estimate_ego_motion(
     """
     Estimates the ego vehicle's state using a 5D Extended Kalman Filter.
     It fuses information from radar (RANSAC), CAN bus, a dynamics model, and an IMU.
-
-    Args:
-        # ... (numerous arguments for sensor data and state)
-        ego_kf_state (dict): Dictionary representing the EKF state {'x', 'P', 'Q'}.
-        filtered_vx_ego_iir (float): Previous state of the IIR filter for Vx.
-        filtered_vy_ego_iir (float): Previous state of the IIR filter for Vy.
-        # ... (other params)
-
-    Returns:
-        tuple: A tuple containing all the updated states and intermediate results.
     """
+    # --- MODIFICATION START: Add a robust function to sanitize inputs ---
+    def get_numeric(value, default):
+        """Returns the value if it's a valid number, otherwise returns the default."""
+        if not isinstance(value, numbers.Number) or np.isnan(value):
+            return default
+        return value
+    
+    # Sanitize all potentially problematic inputs at the beginning of the function
+    can_veh_speed_kmph = get_numeric(can_veh_speed_kmph, np.nan)
+    shaft_torque_nm = get_numeric(shaft_torque_nm, np.nan)
+    engaged_gear = get_numeric(engaged_gear, np.nan)
+    can_road_grade_deg = get_numeric(can_road_grade_deg, 0.0)
+    imu_ax_mps2 = get_numeric(imu_ax_mps2, 0.0)
+    imu_ay_mps2 = get_numeric(imu_ay_mps2, 0.0)
+    imu_omega_radps = get_numeric(imu_omega_radps, 0.0)
+    # --- MODIFICATION END ---
+
     # --- 0. Initialize Outputs ---
     ransac_vx, ransac_vy, ego_inlier_ratio = 0.0, 0.0, 0.0
     ransac_successful = False
@@ -35,6 +43,7 @@ def estimate_ego_motion(
     outlier_indices = np.array([], dtype=int)
     
     # --- 1. RANSAC Ego-Motion Estimation ---
+    # This line will now work correctly because can_veh_speed_kmph is guaranteed to be a number (or np.nan)
     is_vehicle_moving = not np.isnan(can_veh_speed_kmph) and \
                         (can_veh_speed_kmph / 3.6) > ego_motion_params['stationarySpeedThreshold']
     

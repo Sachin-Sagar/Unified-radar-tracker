@@ -1,6 +1,7 @@
 # src/tracking/tracker.py
 
 import numpy as np
+import numbers # <-- Import the numbers module for type checking
 
 # Import all the necessary components from the tracking module
 from .perform_track_assignment_master import perform_track_assignment_master
@@ -43,18 +44,27 @@ class RadarTracker:
         if delta_t <= 0: delta_t = 0.05
         self.last_timestamp_ms = current_frame.timestamp
 
-        # --- Prepare CAN and IMU data with fallbacks ---
+        # --- MODIFICATION START: Prepare CAN and IMU data with robust fallbacks ---
         if can_signals:
             can_speed = can_signals.get('VehSpeed_Act_kmph', np.nan)
             can_torque = can_signals.get('ShaftTorque_Est_Nm', np.nan)
             can_gear = can_signals.get('Gear_Engaged_St_enum', np.nan)
-            can_grade = can_signals.get('EstimatedGrade_Est_Deg', 0.0)
-            imu_ax = can_signals.get('imuProc_xaccel', 0.0)
-            imu_ay = can_signals.get('imuProc_yaccel', 0.0)
-            imu_omega = can_signals.get('imuProc_yawRate', 0.0)
+            
+            # This is the new, robust way to handle potentially non-numeric data
+            def get_numeric(value, default):
+                if not isinstance(value, numbers.Number) or np.isnan(value):
+                    return default
+                return value
+
+            can_grade = get_numeric(can_signals.get('EstimatedGrade_Est_Deg'), 0.0)
+            imu_ax = get_numeric(can_signals.get('imuProc_xaccel'), 0.0)
+            imu_ay = get_numeric(can_signals.get('imuProc_yaccel'), 0.0)
+            imu_omega = get_numeric(can_signals.get('imuProc_yawRate'), 0.0)
         else:
+            # This branch handles the case where no can_signals dictionary is passed at all
             can_speed, can_torque, can_gear, can_grade = np.nan, np.nan, np.nan, 0.0
             imu_ax, imu_ay, imu_omega = 0.0, 0.0, 0.0
+        # --- MODIFICATION END ---
 
         cartesian_pos_data = current_frame.posLocal
         point_cloud = current_frame.pointCloud
