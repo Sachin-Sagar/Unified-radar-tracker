@@ -89,7 +89,7 @@ def define_parameters():
     }
 
     # --- Debugging ---
-    params['debug_mode'] = False
-    params['debug_mode1'] = False # For more verbose logging
+    params['debug_mode'] = True
+    params['debug_mode1'] = True # For more verbose logging
 
     return params
