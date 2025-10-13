@@ -4,7 +4,9 @@ import sys
 import time
 from datetime import datetime
 import numpy as np
-import logging  # <-- Add logging import
+import logging
+import psutil
+import os
 
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QThread, pyqtSignal, QObject
@@ -18,7 +20,7 @@ from .tracking.parameters import define_parameters
 from .tracking.update_and_save_history import update_and_save_history
 from .live_visualizer import LiveVisualizer
 from .json_logger import DataLogger
-from .console_logger import setup_logging  # <-- Import the new setup function
+from .console_logger import setup_logging
 
 # --- Configuration ---
 if sys.platform == "win32":
@@ -26,9 +28,9 @@ if sys.platform == "win32":
 elif sys.platform == "linux":
     CLI_COMPORT_NUM = '/dev/ttyACM0'
 else:
-    logging.error(f"Unsupported OS '{sys.platform}' detected. Please set COM port manually.") # <-- Use logging
+    logging.error(f"Unsupported OS '{sys.platform}' detected. Please set COM port manually.")
     CLI_COMPORT_NUM = None
-    
+
 CONFIG_FILE_PATH = 'configs/profile_80_m_40mpsec_bsdevm_16tracks_dyClutter.cfg'
 INITIAL_BAUD_RATE = 115200
 
@@ -54,6 +56,8 @@ class RadarWorker(QObject):
 
     def run(self):
         """The main processing loop."""
+        process = psutil.Process(os.getpid())
+
         log_filename = f"output/radar_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         self.logger_thread = QThread()
         self.data_logger = DataLogger(log_filename)
@@ -63,7 +67,7 @@ class RadarWorker(QObject):
 
         self.params_radar, self.h_data_port = self._configure_sensor()
         if not self.params_radar or not self.h_data_port:
-            logging.error("Failed to configure sensor. Exiting worker thread.") # <-- Use logging
+            logging.error("Failed to configure sensor. Exiting worker thread.")
             self.stop()
             self.finished.emit()
             return
@@ -71,7 +75,7 @@ class RadarWorker(QObject):
         params_tracker = define_parameters()
         self.tracker = RadarTracker(params_tracker)
 
-        logging.info("--- Starting Live Tracking ---") # <-- Use logging
+        logging.info("--- Starting Live Tracking ---")
         while self.is_running:
             frame_data = read_and_parse_frame(self.h_data_port, self.params_radar)
             if not frame_data or not frame_data.header:
@@ -84,7 +88,14 @@ class RadarWorker(QObject):
             self.fhist_history.append(processed_frame)
 
             num_confirmed_tracks = sum(1 for t in updated_tracks if t.get('isConfirmed') and not t.get('isLost'))
-            logging.info(f"Frame: {self.tracker.frame_idx} | Detections: {frame_data.num_points} | Confirmed Tracks: {num_confirmed_tracks}") # <-- Use logging
+            
+            if self.tracker.frame_idx > 0 and self.tracker.frame_idx % 100 == 0:
+                mem_info = process.memory_info()
+                ram_mb = mem_info.rss / (1024 * 1024) 
+                cpu_percent = process.cpu_percent(interval=0.1)
+                logging.info(f"[PERFORMANCE] Frame: {self.tracker.frame_idx} | CPU: {cpu_percent:.2f}% | RAM: {ram_mb:.2f} MB")
+
+            logging.info(f"Frame: {self.tracker.frame_idx} | Detections: {frame_data.num_points} | Confirmed Tracks: {num_confirmed_tracks}")
 
             self.frame_ready.emit(frame_data)
 
@@ -102,29 +113,29 @@ class RadarWorker(QObject):
                 try: target_baud_rate = int(command.split()[1])
                 except (ValueError, IndexError): pass
                 break
-        logging.info("\n--- Starting Sensor Configuration ---") # <-- Use logging
+        logging.info("\n--- Starting Sensor Configuration ---")
         h_port = hw_comms_utils.configure_control_port(self.cli_com_port, INITIAL_BAUD_RATE)
         if not h_port: return None, None
         for command in cli_cfg:
-            logging.info(f"> {command}") # <-- Use logging
+            logging.info(f"> {command}")
             h_port.write((command + '\n').encode())
             time.sleep(0.1)
             if "baudRate" in command:
                 time.sleep(0.2)
                 try:
                     h_port.baudrate = target_baud_rate
-                    logging.info(f"  Baud rate changed to {target_baud_rate}") # <-- Use logging
+                    logging.info(f"  Baud rate changed to {target_baud_rate}")
                 except Exception as e:
-                    logging.error(f"ERROR: Failed to change baud rate: {e}") # <-- Use logging
+                    logging.error(f"ERROR: Failed to change baud rate: {e}")
                     h_port.close()
                     return None, None
-        logging.info("--- Configuration complete ---\n") # <-- Use logging
+        logging.info("--- Configuration complete ---\n")
         hw_comms_utils.reconfigure_port_for_data(h_port)
         return params, h_port
 
     def _save_tracking_history(self):
         """Saves the final processed tracking history."""
-        logging.info("\n--- Saving tracking history ---") # <-- Use logging
+        logging.info("\n--- Saving tracking history ---")
         if self.tracker and self.fhist_history:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"output/track_history_{timestamp}.json"
@@ -135,11 +146,11 @@ class RadarWorker(QObject):
                 params=self.tracker.params
             )
         else:
-            logging.warning("No frame history was processed, nothing to save.") # <-- Use logging
+            logging.warning("No frame history was processed, nothing to save.")
 
     def stop(self):
         """Stops the processing loop and the logger."""
-        logging.info("--- Stopping worker thread... ---") # <-- Use logging
+        logging.info("--- Stopping worker thread... ---")
         self.is_running = False
         
         if self.data_logger:
@@ -150,11 +161,14 @@ class RadarWorker(QObject):
 
         if self.h_data_port and self.h_data_port.is_open:
             self.h_data_port.close()
-            logging.info("--- Serial port closed ---") # <-- Use logging
+            logging.info("--- Serial port closed ---")
 
 def main():
     """Main application entry point."""
-    setup_logging()  # <-- Initialize the logger here
+    # --- THIS IS THE FIX ---
+    # The setup_logging() call is removed from here to prevent double-logging.
+    # It is now only called once in the main.py entry point.
+    # --- END OF FIX ---
     app = QApplication(sys.argv)
     worker_thread = QThread()
     radar_worker = RadarWorker(CLI_COMPORT_NUM, CONFIG_FILE_PATH)
@@ -170,4 +184,6 @@ def main():
     sys.exit(app.exec_())
 
 if __name__ == '__main__':
+    # This allows the script to be run standalone for testing.
+    setup_logging()
     main()

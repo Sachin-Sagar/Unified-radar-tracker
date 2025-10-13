@@ -7,3 +7,4 @@ pyserial        # Required for serial communication with the radar hardware.
 PyQt5           # The GUI toolkit used to create the live visualizer window and its components.
 pyqtgraph       # Used for creating the real-time plots within the PyQt5 GUI.
 scipy           # Used for scientific and technical computing, particularly for signal processing in this project.
+psutil          # Used to monitor system resources like CPU and RAM usage.
