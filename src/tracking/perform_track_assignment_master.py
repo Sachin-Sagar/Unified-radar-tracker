@@ -54,20 +54,21 @@ def perform_track_assignment_master(
         if debug_mode:
             logging.info(f'\n[MASTER] -> Calling MAINTAIN for {len(confirmed_indices)} confirmed tracks...')
         
-        all_tracks, miss_flags, validation_matrix, beta = jpda_assignment(
+        # --- THIS IS THE FIX ---
+        all_tracks, miss_flags, validation_matrix, beta, most_likely_meas_indices = jpda_assignment(
             all_tracks, confirmed_indices, detected_centroids, detected_cluster_info,
             params['kf_measurement_noise'], params['jpda_params']['PD'], 
             params['jpda_params']['lambda_c'], params['jpda_params']['gating_chi2'],
             params['gating_params']['positionGatingThreshold'], params
         )
+        # --- END OF FIX ---
+
         assigned_confirmed_flags = ~miss_flags
         
         if num_detections > 0 and validation_matrix.size > 0:
-            # Flag detections that were inside the gate of any successfully updated track
             used_detections_mask = np.any(validation_matrix[:, ~miss_flags], axis=1) if np.any(~miss_flags) else np.zeros(num_detections, dtype=bool)
             assigned_detections_flags[used_detections_mask] = True
 
-        # --- NEW LOGIC: Loop to update history and stationary count ---
         for i, track_idx in enumerate(confirmed_indices):
             if not miss_flags[i]: # Only update assigned tracks
                 track = all_tracks[track_idx]
@@ -81,21 +82,7 @@ def perform_track_assignment_master(
                 track['trajectory'].append(track['lastKnownPosition'])
                 if len(track['trajectory']) > params['lifecycle_params']['maxTrajectoryLength']:
                     track['trajectory'].pop(0)
-                
-                # Find the most probable associated detection
-                # Beta has rows M0, M1, M2... so we look from row 1 onwards
-                if num_detections > 0:
-                    most_likely_meas_idx = np.argmax(beta[1:, i])
-                    
-                    # --- ADDED LOGIC: Update stationaryCount ---
-                    det_info = detected_cluster_info[most_likely_meas_idx]
-                    detection_is_stationary = not det_info.get('isOutlierCluster', True)
-                    if detection_is_stationary:
-                        track['stationaryCount'] += 1
-                    else:
-                        track['stationaryCount'] -= 1
 
-                # Log history for this track
                 predicted_state_for_log = predicted_states[track_idx]
                 current_distance = np.linalg.norm(corrected_state_comb[0:2])
                 if current_distance > 0:
@@ -107,6 +94,12 @@ def perform_track_assignment_master(
 
                 prev_angle = track['historyLog'][-1]['orientationAngle'] if track['historyLog'] else None
                 radii, angle = calculate_ellipse_radii(track['immState']['P'][:2, :2], prev_angle)
+                
+                # --- THIS IS THE FIX ---
+                # Get the measured position from the most likely detection
+                meas_idx = most_likely_meas_indices[i]
+                measured_pos = detected_centroids[meas_idx].flatten() if meas_idx != -1 else [np.nan, np.nan]
+                # --- END OF FIX ---
 
                 log_entry = {
                     'frameIdx': current_frame_idx,
@@ -115,7 +108,8 @@ def perform_track_assignment_master(
                     'modelProbabilities': track['immState']['modelProbabilities'].flatten(),
                     'ttc': ttc, 'ttcCategory': categorize_ttc(ttc, radial_vel if current_distance > 0 else 0, corrected_state_comb[0]),
                     'isStationary': track.get('stationaryCount', 0) > 0,
-                    'covarianceP': track['immState']['P'], 'ellipseRadii': radii, 'orientationAngle': angle
+                    'covarianceP': track['immState']['P'], 'ellipseRadii': radii, 'orientationAngle': angle,
+                    'measuredPosition': measured_pos # Add the measured position to the log
                 }
                 track['historyLog'].append(log_entry)
 

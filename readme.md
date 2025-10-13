@@ -17,7 +17,7 @@ Advanced Tracking:
 
 Uses an Interacting Multiple Model (IMM) filter combined with a Joint Probabilistic Data Association (JPDA) algorithm to robustly track multiple objects.
 
-Performs ego-motion estimation using RANSAC to distinguish between moving and stationary objects.
+Performs ego-motion estimation using RANSAC to distinguish between moving and stationary objects. When the ego vehicle is stationary, all radar points are correctly marked as outliers to ensure accurate downstream processing.
 
 Implements a dual-box filtering system (static and dynamic) to reject stationary clutter from the environment (e.g., guardrails) while still tracking legitimate stationary targets (e.g., stopped vehicles).
 
@@ -51,7 +51,7 @@ Install Dependencies: Make sure you have the required Python libraries installed
 Bash
 
 pip install numpy pyserial pyqt5 pyqtgraph scipy
-Configure COM Port (for Live Mode): Open src/main_live.py and adjust the CLI_COMPORT_NUM variable to match the serial port your radar is connected to.
+Configure COM Port (for Live Mode): Open src/main_live.py and adjust the CLI_COMPORT_NUM variable to match the serial port your radar is connected to. For Linux, the correct path is /dev/ttyACM0.
 
 Run the Application: Execute the main.py script from the root directory of the project.
 
@@ -88,13 +88,13 @@ parsing_utils.py: Handles parsing of the radar configuration file and provides h
 read_and_parse_frame.py: Decodes the raw binary data stream from the radar into a structured FrameData object.
 
 src/tracking/
-tracker.py: Defines the RadarTracker class, which encapsulates the entire state and logic of the tracking system. It orchestrates the pre-processing pipeline, including the dual-box (static and dynamic) logic for stationary clutter rejection.
+tracker.py: Defines the RadarTracker class, which encapsulates the entire state and logic of the tracking system. It contains the core logic for distinguishing a cluster's motion state based on whether the ego vehicle is moving (using RANSAC) or stationary (using absolute radial velocity).
 
-perform_track_assignment_master.py: The central orchestrator for the tracking logic. For each frame, it executes the entire tracking pipeline in a hierarchical order: prediction, assignment (for confirmed, tentative, and new tracks), and deletion.
+perform_track_assignment_master.py: The central orchestrator for the tracking logic. It executes the tracking pipeline and uses the measurement index returned by JPDA to correctly log the measuredPosition for confirmed tracks.
 
 assign.py: Creates new tracks from unassigned detections. It uses strict filtering logic based on motion and location (the static box) to prevent creating tracks from environmental clutter.
 
-jpda_assignment.py: Implements the Joint Probabilistic Data Association (JPDA) algorithm for confirmed tracks. It now uses robust, explicit matrix summation to prevent runtime errors from shape corruption.
+jpda_assignment.py: Implements the Joint Probabilistic Data Association (JPDA) algorithm for confirmed tracks. It now identifies and returns the index of the most likely measurement associated with each track, enabling accurate history logging.
 
 imm_filter.py: Implements the Interacting Multiple Model (IMM) filter. The prediction step is now fortified to enforce correct matrix shapes, preventing the propagation of state corruption errors between frames.
 

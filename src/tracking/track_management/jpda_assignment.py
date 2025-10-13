@@ -12,8 +12,8 @@ def jpda_assignment(
     params
 ):
     """
-    Performs JPDA for confirmed tracks. This version uses robust, explicit
-    summation for all probabilistic updates to prevent matrix shape corruption.
+    Performs JPDA for confirmed tracks. This version now returns the index of the
+    most likely measurement for each track to facilitate history logging.
     """
     debug_mode = params.get('debug_mode', False)
     debug_mode1 = params.get('debug_mode1', False)
@@ -21,8 +21,13 @@ def jpda_assignment(
     num_detections = detected_centroids.shape[0] if detected_centroids is not None else 0
     num_active_tracks = len(active_track_indices)
     
+    # --- THIS IS THE FIX ---
+    # Initialize an array to store the index of the most likely measurement for each track
+    most_likely_measurement_indices = np.full(num_active_tracks, -1, dtype=int)
+    # --- END OF FIX ---
+
     if num_active_tracks == 0:
-        return all_tracks, np.array([]), np.array([]), np.array([])
+        return all_tracks, np.array([]), np.array([]), np.array([]), most_likely_measurement_indices
 
     miss_flags = np.ones(num_active_tracks, dtype=bool)
 
@@ -57,9 +62,7 @@ def jpda_assignment(
             H[1, 0] = py/r_sq; H[1, 1] = -px/r_sq
             H[2, 0] = (vx/r)-(px*(px*vx+py*vy))/r_cub; H[2, 1] = (vy/r)-(py*(px*vx+py*vy))/r_cub
             H[2, 2] = px/r; H[2, 3] = py/r
-            P_gate = P_pred_comb[:4, :4]
-            H_gate = H[:, :4]
-            S = H_gate @ P_gate @ H_gate.T + kf_measurement_noise
+            S = H @ P_pred_comb @ H.T + kf_measurement_noise
             try:
                 S_inv = np.linalg.inv(S)
                 mahalanobis_dist_sq = y.T @ S_inv @ y
@@ -72,7 +75,8 @@ def jpda_assignment(
     # --- Steps 2, 3, 4: Hypothesis Generation & Probability Calculation (Unchanged) ---
     hypotheses = find_jpda_hypotheses(validation_matrix, params)
     if not hypotheses:
-        return all_tracks, miss_flags, validation_matrix, np.zeros((num_detections + 1, num_active_tracks))
+        beta_placeholder = np.zeros((num_detections + 1, num_active_tracks))
+        return all_tracks, miss_flags, validation_matrix, beta_placeholder, most_likely_measurement_indices
 
     hypothesis_probs = np.zeros(len(hypotheses))
     for h_idx, hypo in enumerate(hypotheses):
@@ -148,9 +152,10 @@ def jpda_assignment(
         miss_flags[t_idx] = not (beta_i0 < miss_prob_threshold and max_assoc_prob > 0.1)
 
         # --- THIS IS THE FIX ---
-        # Find the most probable associated detection to update stationary count
         if not miss_flags[t_idx] and num_detections > 0:
             most_likely_meas_idx = np.argmax(beta[1:, t_idx])
+            most_likely_measurement_indices[t_idx] = most_likely_meas_idx
+            
             det_info = detected_cluster_info[most_likely_meas_idx]
             detection_is_stationary = not det_info.get('isOutlierCluster', True)
             if detection_is_stationary:
@@ -165,4 +170,4 @@ def jpda_assignment(
             logging.info(f'    - Max Assoc Prob:      {max_assoc_prob:.4f}')
             logging.info(f'    - Is Miss?             {miss_flags[t_idx]}')
         
-    return all_tracks, miss_flags, validation_matrix, beta
+    return all_tracks, miss_flags, validation_matrix, beta, most_likely_measurement_indices

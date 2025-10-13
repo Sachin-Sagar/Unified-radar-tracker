@@ -135,27 +135,32 @@ class RadarTracker:
 
             if unique_ids.size > 0:
                 temp_centroids, temp_cluster_info = [], []
+                stationary_speed_threshold = self.params['ego_motion_params']['stationarySpeedThreshold']
+
                 for cid in unique_ids:
                     cluster_indices = np.where(dbscan_clusters == cid)[0]
                     centroid = np.mean(cartesian_pos_data[:, cluster_indices], axis=1)
                     mean_radial_speed = np.mean(point_cloud[3, cluster_indices])
                     
-                    outlier_ratio = np.sum(current_frame.isOutlier[cluster_indices]) / len(cluster_indices)
-                    
-                    # --- THIS IS THE CORRECTED LOGIC ---
-                    # is_moving_cluster is True if the cluster is composed of RANSAC outliers (moving points).
-                    is_moving_cluster = outlier_ratio > self.params['cluster_filter_params']['min_outlierClusterRatio_thrs']
-                    
+                    # --- THIS IS THE FIX ---
+                    # Correctly determine if a cluster is moving based on the ego vehicle's state.
+                    if is_vehicle_moving:
+                        # When moving, use RANSAC outliers. A high ratio of outliers means the cluster is moving relative to the static environment.
+                        outlier_ratio = np.sum(current_frame.isOutlier[cluster_indices]) / len(cluster_indices)
+                        is_moving_cluster = outlier_ratio > self.params['cluster_filter_params']['min_outlierClusterRatio_thrs']
+                    else:
+                        # When stationary, the world is the reference. Use the cluster's absolute radial speed.
+                        is_moving_cluster = abs(mean_radial_speed) > stationary_speed_threshold
+                    # --- END OF FIX ---
+
                     # Filter 1: Dynamic Barriers (Guardrails). Only active when vehicle is moving straight.
-                    # If the cluster is STATIONARY and falls within the dynamic barrier box, SKIP it.
                     if dynamic_box is not None:
                         is_in_dynamic_box = (dynamic_box['X_RANGE'][0] <= centroid[0] <= dynamic_box['X_RANGE'][1]) and \
                                             (dynamic_box['Y_RANGE'][0] <= centroid[1] <= dynamic_box['Y_RANGE'][1])
                         if not is_moving_cluster and is_in_dynamic_box:
                             continue 
                     
-                    # Filter 2: Static Box (Stopped Cars). This is always active.
-                    # A cluster is a valid "stationary in box" target if it's STATIONARY and inside the static box.
+                    # Filter 2: Static Box (for tracking stopped cars).
                     is_in_static_box = (static_box['X_RANGE'][0] <= centroid[0] <= static_box['X_RANGE'][1]) and \
                                        (static_box['Y_RANGE'][0] <= centroid[1] <= static_box['Y_RANGE'][1])
                     
@@ -167,10 +172,9 @@ class RadarTracker:
                         'X': centroid[0], 'Y': centroid[1], 'radialSpeed': mean_radial_speed,
                         'vx': mean_radial_speed * np.sin(azimuth_rad), 
                         'vy': mean_radial_speed * np.cos(azimuth_rad),
-                        'isOutlierCluster': is_moving_cluster, # This flag means is_moving_cluster
+                        'isOutlierCluster': is_moving_cluster, # This flag now correctly represents motion
                         'isStationary_inBox': is_stationary_in_box_flag
                     })
-                    # --- END OF CORRECTION ---
 
                 if temp_centroids:
                     detected_centroids = np.array(temp_centroids)
