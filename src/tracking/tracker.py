@@ -34,6 +34,13 @@ class RadarTracker:
         default_x_range = self.params['barrier_detect_params']['default_x_range']
         self.filtered_barrier_x = {'left': default_x_range[0], 'right': default_x_range[1]}
 
+    def _update_frame_with_can_data(self, frame, can_signals):
+        """Updates the frame object with the interpolated CAN signals."""
+        if can_signals:
+            for signal_name, value in can_signals.items():
+                setattr(frame, signal_name, value)
+        return frame
+
     def process_frame(self, current_frame, can_signals=None):
         """
         Processes a single frame of radar data and updates the tracks.
@@ -44,13 +51,12 @@ class RadarTracker:
         if delta_t <= 0: delta_t = 0.05
         self.last_timestamp_ms = current_frame.timestamp
 
-        # --- MODIFICATION START: Prepare CAN and IMU data with robust fallbacks ---
+        # --- Prepare CAN and IMU data with robust fallbacks ---
         if can_signals:
             can_speed = can_signals.get('VehSpeed_Act_kmph', np.nan)
             can_torque = can_signals.get('ShaftTorque_Est_Nm', np.nan)
             can_gear = can_signals.get('Gear_Engaged_St_enum', np.nan)
             
-            # This is the new, robust way to handle potentially non-numeric data
             def get_numeric(value, default):
                 if not isinstance(value, numbers.Number) or np.isnan(value):
                     return default
@@ -61,10 +67,10 @@ class RadarTracker:
             imu_ay = get_numeric(can_signals.get('imuProc_yaccel'), 0.0)
             imu_omega = get_numeric(can_signals.get('imuProc_yawRate'), 0.0)
         else:
-            # This branch handles the case where no can_signals dictionary is passed at all
             can_speed, can_torque, can_gear, can_grade = np.nan, np.nan, np.nan, 0.0
             imu_ax, imu_ay, imu_omega = 0.0, 0.0, 0.0
-        # --- MODIFICATION END ---
+        
+        current_frame = self._update_frame_with_can_data(current_frame, can_signals)
 
         cartesian_pos_data = current_frame.posLocal
         point_cloud = current_frame.pointCloud
@@ -97,13 +103,24 @@ class RadarTracker:
         static_inlier_indices = np.setdiff1d(all_indices, outlier_indices, assume_unique=True)
         is_vehicle_moving = np.abs(current_frame.egoVx) > self.params['ego_motion_params']['stationarySpeedThreshold']
         
-        dynamic_stationary_box = self.params['stationary_cluster_box'].copy()
+        # --- THIS IS THE FIX ---
+        # Define the static box around the ego vehicle from parameters. This is the primary filter.
+        static_box = self.params['stationary_cluster_box']
+        
+        # The dynamic box is a SEPARATE concept for filtering distant barriers.
+        # It is only active when the vehicle is moving straight.
+        dynamic_box = None
         if static_inlier_indices.size > 0 and is_vehicle_moving and motion_state == 0:
             dynamic_x_range, self.filtered_barrier_x = detect_side_barrier(
                 cartesian_pos_data, static_inlier_indices,
                 self.params['barrier_detect_params'], self.filtered_barrier_x
             )
-            dynamic_stationary_box['X_RANGE'] = dynamic_x_range
+            # The dynamic box uses the barrier width and the barrier's longitudinal range.
+            dynamic_box = {
+                'X_RANGE': dynamic_x_range,
+                'Y_RANGE': self.params['barrier_detect_params']['longitudinal_range']
+            }
+        # --- END OF FIX ---
         
         current_frame.filtered_barrier_x = type('barrier_struct', (object,), self.filtered_barrier_x)()
 
@@ -132,9 +149,22 @@ class RadarTracker:
                     outlier_ratio = np.sum(current_frame.isOutlier[cluster_indices]) / len(cluster_indices)
                     is_outlier_cluster = outlier_ratio > self.params['cluster_filter_params']['min_outlierClusterRatio_thrs']
                     
-                    is_in_box = (dynamic_stationary_box['X_RANGE'][0] <= centroid[0] <= dynamic_stationary_box['X_RANGE'][1]) and \
-                                (dynamic_stationary_box['Y_RANGE'][0] <= centroid[1] <= dynamic_stationary_box['Y_RANGE'][1])
-                    is_stationary_in_box = is_in_box and not is_outlier_cluster
+                    # --- THIS IS THE FIX (PART 2) ---
+                    # Check if the centroid is in the STATIC box (near the vehicle).
+                    is_in_static_box = (static_box['X_RANGE'][0] <= centroid[0] <= static_box['X_RANGE'][1]) and \
+                                       (static_box['Y_RANGE'][0] <= centroid[1] <= static_box['Y_RANGE'][1])
+                    
+                    # A cluster is "stationary in box" only if it is stationary AND in the STATIC box.
+                    is_stationary_in_box = is_in_static_box and is_outlier_cluster
+                    
+                    # If a dynamic box is active, check if the cluster is inside it.
+                    # Clusters inside the dynamic barrier box should be IGNORED.
+                    if dynamic_box is not None:
+                        is_in_dynamic_box = (dynamic_box['X_RANGE'][0] <= centroid[0] <= dynamic_box['X_RANGE'][1]) and \
+                                            (dynamic_box['Y_RANGE'][0] <= centroid[1] <= dynamic_box['Y_RANGE'][1])
+                        if is_in_dynamic_box and is_outlier_cluster:
+                            continue # Skip this cluster, it's part of a distant barrier.
+                    # --- END OF FIX (PART 2) ---
                     
                     azimuth_rad = np.arctan2(centroid[0], centroid[1])
                     temp_centroids.append(centroid)
@@ -142,7 +172,8 @@ class RadarTracker:
                         'X': centroid[0], 'Y': centroid[1], 'radialSpeed': mean_radial_speed,
                         'vx': mean_radial_speed * np.sin(azimuth_rad), 
                         'vy': mean_radial_speed * np.cos(azimuth_rad),
-                        'isOutlierCluster': is_outlier_cluster, 'isStationary_inBox': is_stationary_in_box
+                        'isOutlierCluster': is_outlier_cluster, 
+                        'isStationary_inBox': is_stationary_in_box
                     })
                 if temp_centroids:
                     detected_centroids = np.array(temp_centroids)

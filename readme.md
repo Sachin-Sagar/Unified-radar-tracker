@@ -1,26 +1,35 @@
-# Unified Real-Time Radar Tracker
+Unified Real-Time Radar Tracker
+1. Project Summary
+This project is a complete, real-time radar tracking application built in Python. It interfaces directly with a radar sensor, parses incoming binary data, and processes it through an advanced tracking pipeline. The application can be run in a live mode with hardware or in a playback mode using pre-recorded data files for testing and validation.
 
-## 1. Project Summary
+The system is designed to be robust, featuring a sophisticated sensor fusion and clutter rejection architecture to accurately track objects in a variety of conditions.
 
-This project is a complete, real-time radar tracking application built in Python. It interfaces directly with a radar sensor, configures it, parses the incoming binary data, and processes it through an advanced tracking pipeline. The application provides a live visualization of the radar's point cloud and saves all raw and processed data for later analysis.
+2. Features
+Dual-Mode Operation: Can be launched in Live Mode to connect directly to radar hardware or in Playback Mode to process data from .mat log files.
 
-The system is designed to be robust, with fallbacks for scenarios where supplementary data (like vehicle CAN bus information) is unavailable.
+Hardware Interfacing: Configures the radar sensor by sending commands from a profile file over a serial port.
 
-## 2. Features
+Real-Time Data Acquisition: Listens to the serial port for incoming binary data frames, synchronizes them, and parses them into a usable format.
 
--   **Hardware Interfacing**: Configures the radar sensor by sending commands from a profile file over a serial port.
--   **Real-Time Data Acquisition**: Listens to the serial port for incoming binary data frames and synchronizes them.
--   **Live Visualization**: Displays the radar's point cloud in real-time using PyQt5 and pyqtgraph, running in a separate thread to ensure a non-blocking UI.
--   **Advanced Tracking**:
-    -   Uses an Interacting Multiple Model (IMM) filter combined with a Joint Probabilistic Data Association (JPDA) algorithm to robustly track multiple objects.
-    -   Performs ego-motion estimation to distinguish between moving and stationary objects.
--   **Comprehensive Data Logging**:
-    -   Saves the raw, unprocessed data from every frame to a `radar_log_[timestamp].json` file.
-    -   Saves the final processed frame and track history to a `track_history_[timestamp].json` file and a MATLAB-compatible `.mat` file.
-    -   Saves all console output to a human-readable text file and a structured JSON file for post-processing.
+Live Visualization: Displays the radar's point cloud in real-time using PyQt5 and pyqtgraph, running in a separate thread to ensure a non-blocking UI.
 
-## 3. Folder Structure
+Advanced Tracking:
 
+Uses an Interacting Multiple Model (IMM) filter combined with a Joint Probabilistic Data Association (JPDA) algorithm to robustly track multiple objects.
+
+Performs ego-motion estimation using RANSAC to distinguish between moving and stationary objects.
+
+Implements a dual-box filtering system (static and dynamic) to reject stationary clutter from the environment (e.g., guardrails) while still tracking legitimate stationary targets (e.g., stopped vehicles).
+
+Comprehensive Data Logging:
+
+Saves the raw, unprocessed data from every frame to a radar_log_[timestamp].json file.
+
+Saves the final processed frame and track history to a track_history_[timestamp].json file.
+
+Saves all console output to both a human-readable text file and a structured JSON file for post-processing and debugging.
+
+3. Folder Structure
 unified_radar_tracker/
 |
 ├── configs/
@@ -30,73 +39,65 @@ unified_radar_tracker/
 |   └── (This directory will contain the final log files)
 |
 ├── src/
-|   ├── init.py
-|   ├── console_logger.py
-|   ├── data_adapter.py
-|   ├── json_logger.py
-|   ├── live_visualizer.py
 |   ├── main_live.py
-|   |
-|   ├── hardware/
-|   |   ├── init.py
-|   |   ├── hw_comms_utils.py
-|   |   ├── parsing_utils.py
-|   |   └── read_and_parse_frame.py
-|   |
-|   └── tracking/
-|       ├── init.py
-|       ├── data_loader.py
-|       ├── export_to_json.py
-|       ├── perform_track_assignment_master.py
-|       ├── tracker.py
-|       ├── update_and_save_history.py
-|       ├── visualize_track_history.py
-|       |
-|       ├── algorithms/
-|       ├── filters/
-|       ├── track_management/
-|       └── utils/
+|   ├── main_playback.py
+|   ├── ... (other modules)
 |
+├── main.py
 └── readme.md
+4. How to Run
+Install Dependencies: Make sure you have the required Python libraries installed.
 
+Bash
 
-## 4. How to Run
+pip install numpy pyserial pyqt5 pyqtgraph scipy
+Configure COM Port (for Live Mode): Open src/main_live.py and adjust the CLI_COMPORT_NUM variable to match the serial port your radar is connected to.
 
-1.  **Install Dependencies**: Make sure you have the required Python libraries installed.
-    ```bash
-    pip install numpy pyserial pyqt5 pyqtgraph scipy
-    ```
-2.  **Configure COM Port**: Open `src/main_live.py` and adjust the `CLI_COMPORT_NUM` variable to match the serial port your radar is connected to.
-3.  **Run the Application**: Execute the `main_live.py` script from the root directory of the project.
-    ```bash
-    python -m src.main_live
-    ```
-4.  **(Optional) Enable Debug Logs**: To see verbose tracking messages, open `src/tracking/parameters.py` and set the `debug_mode` flag to `True`.
-5.  **View Results**: A live plot of the radar data will appear. When you close the window, all log files (raw data, track history, and console output) will be saved in the `output/` directory.
+Run the Application: Execute the main.py script from the root directory of the project.
 
-## 5. File Descriptions
+Bash
 
-### `src/`
+python main.py
+Select a Mode: The script will prompt you to choose between (1) Live Tracking or (2) Playback from File.
 
--   **`main_live.py`**: The main entry point for the application. It initializes the logging system, GUI, and starts the background worker thread for radar processing.
--   **`live_visualizer.py`**: Contains the `LiveVisualizer` class, which creates the PyQt5 GUI window and the pyqtgraph plot for real-time data display.
--   **`console_logger.py`**: Configures the application-wide logging system. It sets up handlers to output log messages to the console, a plain text file, and a structured JSON file.
--   **`json_logger.py`**: Implements a thread-safe `DataLogger` class to save raw `FrameData` objects to a JSON file without blocking the main processing loop.
--   **`data_adapter.py`**: A crucial bridge that translates `FrameData` objects from the hardware layer into the `FHistFrame` format expected by the tracking layer.
+(Optional) Enable Debug Logs: To see verbose tracking messages, open src/tracking/parameters.py and set the debug_mode flag to True.
 
-### `src/hardware/`
+View Results: When you close the application window, all log files (raw data, track history, and console output) will be saved in the output/ directory.
 
--   **`hw_comms_utils.py`**: Manages serial port communication, including opening the port, changing baud rates, and reliably finding the start of data frames.
--   **`parsing_utils.py`**: Handles parsing of the text-based radar configuration file and provides helper functions for unpacking binary data.
--   **`read_and_parse_frame.py`**: Decodes the raw binary data stream from the radar into a structured `FrameData` object containing the point cloud, targets, and stats.
+5. File Descriptions
+Core Application Files
+main.py: The main entry point for the application. It prompts the user to select between live and playback modes and launches the appropriate module.
 
-### `src/tracking/`
+main_live.py: Handles the setup and execution of the live tracking mode, including hardware configuration, starting the GUI, and managing the worker thread.
 
--   **`tracker.py`**: Defines the `RadarTracker` class, which encapsulates the entire state and logic of the tracking system.
--   **`perform_track_assignment_master.py`**: The central orchestrator for the tracking logic. For each frame, it calls the various track management functions in a strict, hierarchical order.
--   **`update_and_save_history.py`**: Saves the final processed data to both JSON and MATLAB-compatible `.mat` files upon application shutdown.
--   **`visualize_track_history.py`**: A standalone debugging tool to load a saved JSON file and interactively visualize the history of a single track.
--   **`algorithms/`**: Contains core algorithms like DBSCAN clustering, RANSAC, and ego-motion estimation.
--   **`filters/`**: Home to the Interacting Multiple Model (IMM) and Extended Kalman Filter (EKF) implementations.
--   **`track_management/`**: Contains the high-level logic for a track's lifecycle (assigning, updating, reassigning, and deleting tracks).
--   **`utils/`**: A collection of helper functions for math operations, coordinate transforms, and more.
+main_playback.py: Handles the setup and execution of the playback mode, including loading radar and CAN data from files and feeding it to the tracker.
+
+live_visualizer.py: Creates the PyQt5 GUI window and the pyqtgraph plot for real-time data display.
+
+console_logger.py: Configures the application-wide logging system to output messages to the console and to both text and JSON files.
+
+json_logger.py: Implements a thread-safe DataLogger to save raw radar data to a JSON file without blocking the main processing loop.
+
+data_adapter.py: A crucial bridge that translates data objects from both the hardware layer and .mat files into a consistent FHistFrame format expected by the tracking layer.
+
+src/hardware/
+hw_comms_utils.py: Manages serial port communication, including opening the port and reliably finding the start of data frames.
+
+parsing_utils.py: Handles parsing of the radar configuration file and provides helper functions for unpacking binary data.
+
+read_and_parse_frame.py: Decodes the raw binary data stream from the radar into a structured FrameData object.
+
+src/tracking/
+tracker.py: Defines the RadarTracker class, which encapsulates the entire state and logic of the tracking system. It orchestrates the pre-processing pipeline, including the dual-box (static and dynamic) logic for stationary clutter rejection.
+
+perform_track_assignment_master.py: The central orchestrator for the tracking logic. For each frame, it executes the entire tracking pipeline in a hierarchical order: prediction, assignment (for confirmed, tentative, and new tracks), and deletion.
+
+assign.py: Creates new tracks from unassigned detections. It uses strict filtering logic based on motion and location (the static box) to prevent creating tracks from environmental clutter.
+
+jpda_assignment.py: Implements the Joint Probabilistic Data Association (JPDA) algorithm for confirmed tracks. It now uses robust, explicit matrix summation to prevent runtime errors from shape corruption.
+
+imm_filter.py: Implements the Interacting Multiple Model (IMM) filter. The prediction step is now fortified to enforce correct matrix shapes, preventing the propagation of state corruption errors between frames.
+
+update_and_save_history.py: Saves the final processed data to both JSON and MATLAB-compatible .mat files.
+
+visualize_track_history.py: A standalone debugging tool to load a saved JSON file and interactively visualize the history of a single track.

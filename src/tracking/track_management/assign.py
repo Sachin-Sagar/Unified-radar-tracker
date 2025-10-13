@@ -26,10 +26,19 @@ def assign_new_tracks(
         angle_det_rel_deg = np.rad2deg(np.arctan2(det_x_rel, det_y_rel))
 
         is_reliable = (gating_params['minAngle'] <= angle_det_rel_deg <= gating_params['maxAngle']) and \
-                      (det_radius_rel > gating_params['maxRadius'])
+                      (det_radius_rel < gating_params['maxRadius'])
         is_not_too_fast = abs(det_info['radialSpeed']) <= gating_params['maxRadialSpeedThreshold']
-        is_stationary_cluster = not det_info.get('isOutlierCluster', True)
-        can_be_tracked = not is_stationary_cluster or track_stationary or det_info.get('isStationary_inBox', False)
+        
+        # --- THIS IS THE FIX ---
+        # Correctly determine if a cluster is stationary. A cluster of outliers IS a stationary cluster.
+        # The default is False, meaning we assume a cluster is moving unless proven otherwise.
+        is_stationary_cluster = det_info.get('isOutlierCluster', False)
+
+        # A new track should only be created if the cluster is MOVING,
+        # OR if it is stationary but inside the predefined stationary box.
+        # The global 'trackStationary' param is too broad for new track creation and is removed here.
+        can_be_tracked = not is_stationary_cluster or det_info.get('isStationary_inBox', False)
+        # --- END OF FIX ---
         
         if is_reliable and is_not_too_fast and can_be_tracked:
             if debug_mode:

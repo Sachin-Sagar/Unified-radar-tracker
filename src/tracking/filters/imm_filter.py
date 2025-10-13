@@ -29,16 +29,24 @@ def imm_predict(imm_state, imm_params, delta_t, ego_yaw_rate):
     # Calculate mixing probabilities (mu_ij)
     mu_ij = (p_ij * mu_prev) / c_bar.T
 
-    # Calculate the mixed state and covariance for each model
-    x_mixed = [np.zeros_like(imm_state['models'][0]['x']) for _ in range(N)]
-    P_mixed = [np.zeros_like(imm_state['models'][0]['P']) for _ in range(N)]
+    # --- THIS IS THE FIX ---
+    # Calculate the mixed state and covariance for each model.
+    # We explicitly initialize with the correct shape (7, 1) to prevent
+    # propagation of shape errors from a previous frame.
+    x_mixed = [np.zeros((7, 1)) for _ in range(N)]
+    P_mixed = [np.zeros((7, 7)) for _ in range(N)]
+    # --- END OF FIX ---
 
     for j in range(N):
+        # This loop correctly populates the (7,1) x_mixed arrays
         for i in range(N):
-            x_mixed[j] += imm_state['models'][i]['x'] * mu_ij[i, j]
+            # Ensure the input state is reshaped to (7,1) before use
+            state_to_mix = imm_state['models'][i]['x'].reshape(7, 1)
+            x_mixed[j] += state_to_mix * mu_ij[i, j]
         
         for i in range(N):
-            diff = imm_state['models'][i]['x'] - x_mixed[j]
+            state_to_mix = imm_state['models'][i]['x'].reshape(7, 1)
+            diff = state_to_mix - x_mixed[j]
             P_mixed[j] += mu_ij[i, j] * (imm_state['models'][i]['P'] + diff @ diff.T)
 
     # --- 2. Model-Specific Prediction Step ---
@@ -55,11 +63,15 @@ def imm_predict(imm_state, imm_params, delta_t, ego_yaw_rate):
     imm_state_pred['modelProbabilities'] = c_bar
 
     # --- 3. Fuse Predicted States and Covariances (for logging/gating) ---
-    x_fused = np.zeros_like(x_mixed[0])
+    # --- THIS IS THE FIX (PART 2) ---
+    # Enforce the correct shape for the fused state and covariance as well.
+    x_fused = np.zeros((7, 1))
+    P_fused = np.zeros((7, 7))
+    # --- END OF FIX (PART 2) ---
+
     for j in range(N):
         x_fused += c_bar[j] * imm_state_pred['models'][j]['x']
 
-    P_fused = np.zeros_like(P_mixed[0])
     for j in range(N):
         diff = imm_state_pred['models'][j]['x'] - x_fused
         P_fused += c_bar[j] * (imm_state_pred['models'][j]['P'] + diff @ diff.T)

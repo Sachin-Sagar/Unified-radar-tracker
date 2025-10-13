@@ -4,7 +4,7 @@ import scipy.io as sio
 import numpy as np
 import os
 import logging
-import re # --- ADDITION: Import the regular expression module ---
+import re
 from datetime import datetime, timedelta
 
 def load_fhist_data(file_path):
@@ -22,21 +22,17 @@ def load_fhist_data(file_path):
             fhist = mat_data['fHist']
             logging.info(f"Successfully loaded fHist data with {len(fhist)} frames.")
             
-            # --- MODIFICATION: Use regex to parse filename, matching MATLAB ---
             filename = os.path.basename(file_path)
-            # This regex looks for 'fHist_' followed by a timestamp like 'ddMMyyyy_HHmmss.SSS'
             match = re.search(r'fHist_(\d{8}_\d{6}\.\d{3})', filename)
             
             if match:
                 timestamp_str = match.group(1)
-                # The format now correctly matches the extracted string
                 radar_start_datetime = datetime.strptime(timestamp_str, '%d%m%Y_%H%M%S.%f')
                 logging.info(f"Radar log start time from filename: {radar_start_datetime.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
                 return fhist, radar_start_datetime
             else:
                 logging.warning(f"Could not extract radar start timestamp from filename '{filename}'. CAN sync will not be possible.")
                 return fhist, None
-            # --- END OF MODIFICATION ---
         else:
             logging.error("Error: 'fHist' variable not found in the .mat file.")
             return None, None
@@ -50,7 +46,6 @@ def load_and_sync_can_data(can_file_path, radar_start_datetime, fhist):
     Loads CAN log data, synchronizes it with the radar history, and
     creates a dictionary of snipped CAN signals.
     """
-    # This function is unchanged but included for completeness
     if radar_start_datetime is None:
         logging.warning("Cannot sync CAN data without radar start time.")
         return None
@@ -77,6 +72,8 @@ def load_and_sync_can_data(can_file_path, radar_start_datetime, fhist):
         logging.info(f"Radar log end time (calculated): {radar_end_datetime.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
         tolerance = timedelta(milliseconds=50)
         
+        # --- DEBUG MESSAGE ADDED ---
+        logging.info("\n--- Checking for CAN Signals ---")
         for signal_name in signal_list:
             if hasattr(can_data.get('decoded_signals', {}), signal_name):
                 signal = getattr(can_data['decoded_signals'], signal_name)
@@ -91,12 +88,14 @@ def load_and_sync_can_data(can_file_path, radar_start_datetime, fhist):
                     timestamps = np.array([dt.timestamp() for dt in raw_timestamps_dt])[can_indices]
                     data = raw_data[can_indices]
                     snipped_can_signals[signal_name] = {'posix_timestamps': timestamps, 'data': data}
+                    # --- DEBUG MESSAGE ADDED ---
+                    logging.info(f"  [SUCCESS] Found {len(data)} data points for signal '{signal_name}'.")
                 else:
-                    logging.warning(f"No data found for signal '{signal_name}' within the radar time frame.")
+                    logging.warning(f"  [WARNING] No data found for signal '{signal_name}' within the radar time frame.")
             else:
-                logging.warning(f"Signal '{signal_name}' not found in the CAN log file.")
+                logging.warning(f"  [WARNING] Signal '{signal_name}' not found in the CAN log file.")
         
-        logging.info("CAN log extraction and snipping complete.")
+        logging.info("--- CAN log extraction and snipping complete. ---\n")
         return snipped_can_signals
 
     except Exception as e:
