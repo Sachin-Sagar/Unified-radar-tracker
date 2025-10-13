@@ -106,14 +106,14 @@ def update_tentative_tracks(
         track['age'] += 1
         track['lastSeenFrame'] = current_frame_idx
         
-        # --- ADDED LOGIC: Update stationaryCount ---
+        # --- THIS IS THE FIX ---
         # A cluster is stationary if it is NOT an "outlier cluster"
         detection_is_stationary = not det_info.get('isOutlierCluster', True)
         if detection_is_stationary:
             track['stationaryCount'] += 1
         else:
             track['stationaryCount'] -= 1
-        # --- END OF ADDED LOGIC ---
+        # --- END OF FIX ---
 
         corrected_state_comb = track['immState']['x']
         corrected_cov_comb = track['immState']['P']

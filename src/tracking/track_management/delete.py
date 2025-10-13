@@ -25,7 +25,6 @@ def delete_unassigned_tracks(
     for track_idx in unassigned_track_indices:
         track = all_tracks[track_idx]
         
-        # M-out-of-N logic for tentative tracks
         if not track.get('isConfirmed'):
             if 'detectionHistory' not in track:
                 track['detectionHistory'] = []
@@ -36,7 +35,7 @@ def delete_unassigned_tracks(
         track['misses'] = track.get('misses', 0) + 1
         track['age'] = track.get('age', 0) + 1
 
-        # >>>>>>>>>>>>>>>>> MODIFICATION START: ADD HISTORY LOGGING FOR MISSES <<<<<<<<<<<<<<<<<<<
+        # --- THIS IS THE FIX ---
         # For a missed track, the "corrected" state is the predicted state.
         predicted_state_comb = track['immState']['x']
         predicted_cov_comb = track['immState']['P']
@@ -46,7 +45,6 @@ def delete_unassigned_tracks(
         if len(track['trajectory']) > max_trajectory_length:
             track['trajectory'].pop(0)
 
-        # Calculate TTC based on the predicted state
         current_distance = np.linalg.norm(predicted_state_comb[0:2])
         if current_distance > 0:
             radial_vel = (predicted_state_comb[0] * predicted_state_comb[2] + 
@@ -60,16 +58,14 @@ def delete_unassigned_tracks(
         track['ttc'] = ttc
         track['ttcCategory'] = categorize_ttc(ttc, radial_vel if current_distance > 0 else 0, predicted_state_comb[0])
 
-        # Calculate covariance ellipse based on predicted covariance
         prev_angle = track['historyLog'][-1]['orientationAngle'] if track['historyLog'] else None
         radii, angle = calculate_ellipse_radii(predicted_cov_comb[:2, :2], prev_angle)
 
-        # Create and append the history log entry
         log_entry = {
             'frameIdx': current_frame_idx,
             'predictedPosition': predicted_state_comb[0:2].flatten(),
             'predictedVelocity': predicted_state_comb[2:4].flatten(),
-            'correctedPosition': predicted_state_comb[0:2].flatten(), # Corrected is same as predicted on miss
+            'correctedPosition': predicted_state_comb[0:2].flatten(),
             'correctedVelocity': predicted_state_comb[2:4].flatten(),
             'modelProbabilities': track['immState']['modelProbabilities'].flatten(),
             'measuredPosition': [np.nan, np.nan],
@@ -81,7 +77,7 @@ def delete_unassigned_tracks(
             'orientationAngle': angle
         }
         track['historyLog'].append(log_entry)
-        # >>>>>>>>>>>>>>>>> MODIFICATION END <<<<<<<<<<<<<<<<<<<
+        # --- END OF FIX ---
 
         if track['misses'] > max_misses and not track.get('isLost'):
             track['isLost'] = True

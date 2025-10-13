@@ -97,11 +97,7 @@ def jpda_assignment(
         track = all_tracks[track_idx]
         imm_state_pred = track['immState']
         
-        # --- THIS IS THE FIX ---
-        # The variable 'beta_i0' is defined here, so all calculations using it
-        # must be inside this loop.
         beta_i0 = beta[0, t_idx]
-        # --- END OF FIX ---
 
         hypo_states = {0: imm_state_pred}
         
@@ -112,7 +108,6 @@ def jpda_assignment(
                                     detected_cluster_info[d]['radialSpeed']]).reshape(3, 1)
                 hypo_states[d + 1] = imm_correct(imm_state_pred, z_polar, kf_measurement_noise)
 
-        # Robust summation logic (as implemented in the previous step)
         x_final = np.zeros((7, 1))
         mu_final = np.zeros((3, 1))
         P_final = np.zeros((7, 7))
@@ -148,12 +143,21 @@ def jpda_assignment(
             all_tracks[track_idx]['immState']['models'][m]['x'] = x_m_final
             all_tracks[track_idx]['immState']['models'][m]['P'] = P_m_final
         
-        # --- THIS IS THE FIX (PART 2) ---
-        # The miss_flags calculation is now correctly placed inside the loop.
         miss_prob_threshold = 0.75
         max_assoc_prob = np.max(beta[1:, t_idx]) if num_detections > 0 else 0
         miss_flags[t_idx] = not (beta_i0 < miss_prob_threshold and max_assoc_prob > 0.1)
-        # --- END OF FIX (PART 2) ---
+
+        # --- THIS IS THE FIX ---
+        # Find the most probable associated detection to update stationary count
+        if not miss_flags[t_idx] and num_detections > 0:
+            most_likely_meas_idx = np.argmax(beta[1:, t_idx])
+            det_info = detected_cluster_info[most_likely_meas_idx]
+            detection_is_stationary = not det_info.get('isOutlierCluster', True)
+            if detection_is_stationary:
+                track['stationaryCount'] += 1
+            else:
+                track['stationaryCount'] -= 1
+        # --- END OF FIX ---
         
         if debug_mode:
             logging.info(f'  [JPDA-DEBUG] Track {t_idx} (ID {track["id"]}) Miss Flag Check:')

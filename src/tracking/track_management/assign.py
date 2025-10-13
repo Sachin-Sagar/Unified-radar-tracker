@@ -29,21 +29,22 @@ def assign_new_tracks(
                       (det_radius_rel < gating_params['maxRadius'])
         is_not_too_fast = abs(det_info['radialSpeed']) <= gating_params['maxRadialSpeedThreshold']
         
-        # --- THIS IS THE FIX ---
-        # Correctly determine if a cluster is stationary. A cluster of outliers IS a stationary cluster.
-        # The default is False, meaning we assume a cluster is moving unless proven otherwise.
-        is_stationary_cluster = det_info.get('isOutlierCluster', False)
-
-        # A new track should only be created if the cluster is MOVING,
-        # OR if it is stationary but inside the predefined stationary box.
-        # The global 'trackStationary' param is too broad for new track creation and is removed here.
-        can_be_tracked = not is_stationary_cluster or det_info.get('isStationary_inBox', False)
-        # --- END OF FIX ---
+        # --- THIS IS THE CORRECTED LOGIC ---
+        # A track should be created if the cluster is MOVING,
+        # OR if it is a special stationary cluster that has been flagged as being "in the box".
+        is_moving_cluster = det_info.get('isOutlierCluster', False) # True if moving
+        is_stationary_target_in_box = det_info.get('isStationary_inBox', False)
+        
+        can_be_tracked = is_moving_cluster or is_stationary_target_in_box
+        # --- END OF CORRECTION ---
         
         if is_reliable and is_not_too_fast and can_be_tracked:
             if debug_mode:
                 logging.info(f'  -> ACCEPTED: Creating new track {next_track_id} from detection {detection_idx}.')
             
+            # This flag is used for history logging; a cluster is stationary if it's not moving.
+            is_stationary_cluster_for_log = not is_moving_cluster
+
             initial_state_7d = np.array([det_x_rel, det_y_rel, det_info['vx'], det_info['vy'], 0, 0, 0]).reshape(7, 1)
             initial_imm_state = {
                 'modelProbabilities': imm_params['initialModelProbabilities'].copy(),
@@ -64,11 +65,11 @@ def assign_new_tracks(
                 'isLost': False, 'isConfirmed': False,
                 'ttc': ttc, 'ttcCategory': ttc_category,
                 'detectionHistory': [True], 'lastSeenFrame': current_frame_idx,
-                'stationaryCount': 1 if is_stationary_cluster else -1,
+                'stationaryCount': 1 if is_stationary_cluster_for_log else -1,
                 'historyLog': [{'frameIdx': current_frame_idx, 'predictedPosition': initial_state_7d[0:2],
                                 'correctedPosition': initial_state_7d[0:2], 'modelProbabilities': initial_imm_state['modelProbabilities'],
                                 'covarianceP': initial_imm_state['P'], 'ellipseRadii': radii, 'orientationAngle': angle,
-                                'ttc': ttc, 'ttcCategory': ttc_category, 'isStationary': is_stationary_cluster}]
+                                'ttc': ttc, 'ttcCategory': ttc_category, 'isStationary': is_stationary_cluster_for_log}]
             }
             
             all_tracks.append(new_track)

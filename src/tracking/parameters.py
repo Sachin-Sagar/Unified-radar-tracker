@@ -40,7 +40,7 @@ def define_parameters():
         'confirmation_N': 5,
         'maxMisses': 5,
         'maxTrajectoryLength': 50,
-        'trackStationary': True
+        'trackStationary': False
     }
     params['reassignment_params'] = {
         'reassignmentDistanceThreshold': 4.0, # meters
