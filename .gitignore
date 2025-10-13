@@ -40,4 +40,3 @@ data/
 output/
 *.json
 *.mat
-*.txt
