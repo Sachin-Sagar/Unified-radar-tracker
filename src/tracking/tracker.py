@@ -9,6 +9,7 @@ from .algorithms.estimate_ego_motion import estimate_ego_motion
 from .algorithms.classify_vehicle_motion import classify_vehicle_motion
 from .algorithms.detect_side_barrier import detect_side_barrier
 from .algorithms.my_dbscan import my_dbscan
+from .algorithms.detect_and_filter_reflections import detect_and_filter_reflections
 from .utils.slot_points_to_grid import slot_points_to_grid
 
 class RadarTracker:
@@ -134,33 +135,45 @@ class RadarTracker:
             unique_ids = unique_ids[unique_ids > 0]
 
             if unique_ids.size > 0:
-                temp_centroids, temp_cluster_info = [], []
-                stationary_speed_threshold = self.params['ego_motion_params']['stationarySpeedThreshold']
-
+                # --- Refactored Cluster Processing ---
+                all_cluster_info = []
                 for cid in unique_ids:
                     cluster_indices = np.where(dbscan_clusters == cid)[0]
                     centroid = np.mean(cartesian_pos_data[:, cluster_indices], axis=1)
                     mean_radial_speed = np.mean(point_cloud[3, cluster_indices])
+                    all_cluster_info.append({
+                        'X': centroid[0], 'Y': centroid[1], 'radialSpeed': mean_radial_speed,
+                        'originalClusterID': cid
+                    })
+
+                # --- Reflection Filtering ---
+                cluster_ids_to_remove = detect_and_filter_reflections(
+                    grid_map, all_cluster_info, dbscan_clusters, point_cloud,
+                    self.params['reflection_detection_params']['speed_similarity_threshold_mps']
+                )
+
+                temp_centroids, temp_cluster_info = [], []
+                stationary_speed_threshold = self.params['ego_motion_params']['stationarySpeedThreshold']
+
+                for info in all_cluster_info:
+                    if info['originalClusterID'] in cluster_ids_to_remove:
+                        continue
+
+                    cluster_indices = np.where(dbscan_clusters == info['originalClusterID'])[0]
+                    centroid = np.array([info['X'], info['Y']])
                     
-                    # --- THIS IS THE FIX ---
-                    # Correctly determine if a cluster is moving based on the ego vehicle's state.
                     if is_vehicle_moving:
-                        # When moving, use RANSAC outliers. A high ratio of outliers means the cluster is moving relative to the static environment.
                         outlier_ratio = np.sum(current_frame.isOutlier[cluster_indices]) / len(cluster_indices)
                         is_moving_cluster = outlier_ratio > self.params['cluster_filter_params']['min_outlierClusterRatio_thrs']
                     else:
-                        # When stationary, the world is the reference. Use the cluster's absolute radial speed.
-                        is_moving_cluster = abs(mean_radial_speed) > stationary_speed_threshold
-                    # --- END OF FIX ---
+                        is_moving_cluster = abs(info['radialSpeed']) > stationary_speed_threshold
 
-                    # Filter 1: Dynamic Barriers (Guardrails). Only active when vehicle is moving straight.
                     if dynamic_box is not None:
                         is_in_dynamic_box = (dynamic_box['X_RANGE'][0] <= centroid[0] <= dynamic_box['X_RANGE'][1]) and \
                                             (dynamic_box['Y_RANGE'][0] <= centroid[1] <= dynamic_box['Y_RANGE'][1])
                         if not is_moving_cluster and is_in_dynamic_box:
                             continue 
                     
-                    # Filter 2: Static Box (for tracking stopped cars).
                     is_in_static_box = (static_box['X_RANGE'][0] <= centroid[0] <= static_box['X_RANGE'][1]) and \
                                        (static_box['Y_RANGE'][0] <= centroid[1] <= static_box['Y_RANGE'][1])
                     
@@ -169,10 +182,10 @@ class RadarTracker:
                     azimuth_rad = np.arctan2(centroid[0], centroid[1])
                     temp_centroids.append(centroid)
                     temp_cluster_info.append({
-                        'X': centroid[0], 'Y': centroid[1], 'radialSpeed': mean_radial_speed,
-                        'vx': mean_radial_speed * np.sin(azimuth_rad), 
-                        'vy': mean_radial_speed * np.cos(azimuth_rad),
-                        'isOutlierCluster': is_moving_cluster, # This flag now correctly represents motion
+                        'X': centroid[0], 'Y': centroid[1], 'radialSpeed': info['radialSpeed'],
+                        'vx': info['radialSpeed'] * np.sin(azimuth_rad), 
+                        'vy': info['radialSpeed'] * np.cos(azimuth_rad),
+                        'isOutlierCluster': is_moving_cluster,
                         'isStationary_inBox': is_stationary_in_box_flag
                     })
 
